@@ -1,17 +1,19 @@
+// --- INCLUSÃO DAS BIBLIOTECAS USADAS ---
 #include <SimpleModbusSlave.h>
 #include <math.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
+// --- DEFINIÇÃO DOS PINOS A SEREM USADOS ---
 #define Temperatura 3
 const int RelePin = 5;
 const int RelePinLuz = 7;  
 
+// --- CRIAÇÃO DE OBJETOS PARA AQUISIÇÃO DE DADOS DE TEMPERATURA ---
 OneWire oneWire(Temperatura);
-
 DallasTemperature sensors(&oneWire);
 
-
+// --- CRIAÇÃO DAS VARIÁVEIS A SEREM USADAS NO SCADA ---
 float mediaTemp = 0;
 int maxima;
 int minima;
@@ -20,6 +22,7 @@ int ParteDecimalMedidaM1, ParteDecimalMedidaM2, ParteInteiraT2, ParteDecimalT2;
 int mediaSet = 39;
 int mediaScada = 0;
 
+// --- CRIAÇÃO DAS VARIAVEIS DE COMUNICAÇÃO COM O SCADA ---
 enum {
   VALOR_REAL_TEMP1,
   VALOR_REAL_TEMP2,
@@ -32,59 +35,59 @@ enum {
   HOLDING_REGS_SIZE
 };
 
-
+// --- REGISTRADORES DO SCADA ---
 unsigned int holdingRegs[HOLDING_REGS_SIZE];
 
 void setup() {
   Serial.begin(9600);  // Inicialize a comunicação serial
 
+  // --- SET DO MODBUS NO ARDUINO ---
   modbus_configure(&Serial, 9600, SERIAL_8N1, 1, 2, HOLDING_REGS_SIZE, holdingRegs);
-
   modbus_update_comms(9600, SERIAL_8N1, 1);
 
-  pinMode(RelePin, OUTPUT);    // seta o pino como saída
-  digitalWrite(RelePin, HIGH);  // seta o pino com nivel logico baixo
-  pinMode(RelePinLuz, OUTPUT);  // seta o pino como saída
+  // --- DEFINIÇÃO DAS FUNCIONALIDADES DOS PINOS ---
+  pinMode(RelePin, OUTPUT);    
+  digitalWrite(RelePin, HIGH);  
+  pinMode(RelePinLuz, OUTPUT);  
   digitalWrite(RelePinLuz, HIGH);
 
-  sensors.begin(); /*inicia biblioteca*/
+  // --- INICIALIZA A BIBLIOTECA COM AS FUNÇÕES DE LEITURA DOS SENSORES ---
+  sensors.begin();
 
-  pinMode(2, INPUT_PULLUP);
 }
 
 void loop() {
 
-  Serial.println("***************************");
+  // --- SETA A POSIÇÃO INICIAL DO COOLER E FONTE DE CALOR ---
   digitalWrite(RelePin, HIGH);
-  Serial.println("Cooler Desligado");
   digitalWrite(RelePinLuz, LOW);
-  Serial.println("Lampada Ligada");
 
-
+  // ---COLETA OS VALORES DE TEMPERATURA ---
   Temperatura1();
-  
   delay(200);
 
-  maxima = mediaSet + 1;
-  int D = 1;
-  if (mediaTemp >= maxima && D == 1) {
 
+  maxima = mediaSet + 1; // SETA O VALOR DA TEMPERATURA MÉXIMA
+  int D = 1; // VARIÁVEL DE VERIFICAÇÃO
+
+  // --- CONDIÇÃO PARA RESFRIAR O SISTEMA ---
+  if (mediaTemp >= maxima && D == 1) {
+    
+    // --- COMANDO DO RELE PARA RESFRIAR O SISTEMA ---
     digitalWrite(RelePin, LOW);
     Serial.println("Cooler ligado");
     digitalWrite(RelePinLuz, HIGH);
     Serial.println("Lampada Desligada");
     Temperatura1();
 
-
+    // --- LAÇO PARA MANTER O SISTEMA RESFRIANDO ATÉ A TEMPERATURA MÍNIMA ---
     while (D == 1) {
 
       Temperatura1();
-      Serial.println("Resfriando");
-
-      Serial.println(" ");
       delay(200);
 
       minima = mediaSet - 1;
+      // --- FUNÇÃO PARA FAZER O SISTEMA VOLTAR A AQUECER ---
       if (mediaTemp <= minima) {
         Temperatura1();
 
@@ -97,19 +100,21 @@ void loop() {
 
 }  // loop principal
 
-
+// --- FUNÇÃO PARA COLETAR A TEMPERATURA E PUBLICAR NO MODBUS ---
 void Temperatura1() {
-  sensors.requestTemperatures();
 
+  sensors.requestTemperatures();    //COLETA OS VALORES LIDOS PELO SENSOR
+
+  // --- BLOCO PARA COLETAR A TEMPERATURA DO SENSOR 1 E SEPARA AS PARTES DECIMAL E INTEIRO ---
   float tempSensor1 = sensors.getTempCByIndex(0);
-  Serial.print("Temperatura do sensor 1 é: "); /* Printa "A temperatura é:" */
+  Serial.print("Temperatura do sensor 1 é: "); 
   Serial.print(tempSensor1);
   Serial.println(" °C");
   ParteInteiraT1 = floor(tempSensor1);
   ParteDecimalT1 = (tempSensor1 - ParteInteiraT1) * 100;
 
 
-  //////////////////////////////////////////////////////////////////
+  // --- BLOCO PARA COLETAR A TEMPERATURA DO SENSOR 2 E SEPARA AS PARTES DECIMAL E INTEIRO ---
   float tempSensor2 = sensors.getTempCByIndex(1);
   Serial.print("Temperatura do Sensor 2: ");
   Serial.print(tempSensor2);
@@ -117,7 +122,7 @@ void Temperatura1() {
   ParteInteiraT2 = floor(tempSensor2);
   ParteDecimalT2 = (tempSensor2 - ParteInteiraT2) * 100;
 
-  //////////////////////////////////////////////////////////////////
+  // --- CALCULA A MÉDIA DAS TEMPERATURAS E SEPARA AS PARTES DECIMAL E INTEIRO --- 
   mediaTemp = ((tempSensor1 + tempSensor2) / 2);
   Serial.print("MEDIA DE TEMPERATURA: ");
   Serial.print(mediaTemp);
@@ -126,14 +131,7 @@ void Temperatura1() {
   ParteDecimalMedidaM1 = (mediaTemp - ParteInteiraMedidaM1) * 100;
   Serial.println("------------------------------");
 
-  //////////////////////////////////////////////////////////////////
-  if (mediaScada != 0) 
-  {
-    mediaTemp = mediaScada;
-  }
-  modbus_update();
-
-  //////////////////////////////////////////////////////////////////
+  // --- BLOCO PARA ENVIAR OS VALORES SEPARADAMENTE PARA O SUPERVISÓRIO, SEPARANDO PARTE DECIMAL E INTERIA ---
   modbus_update();
   holdingRegs[VALOR_REAL_TEMP1] = ParteInteiraT1;
   holdingRegs[VALOR_REAL_TEMP2] = ParteInteiraT2;
